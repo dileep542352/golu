@@ -1,21 +1,19 @@
 import os
-import asyncio 
+import asyncio
 import logging
-import time
 from pyrogram import Client, filters, enums
 from pyrogram.errors import FloodWait, UsernameNotOccupied
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from telethon import events, Button
 from telethon.errors import FloodWait as TelethonFloodWait
-from telethon.tl.types import DocumentAttributeVideo
 
 from config import API_ID, API_HASH, ERROR_MESSAGE
 from database.db import db
 from TechVJ.strings import HELP_TXT
 from main.plugins.pyroplug import check, get_bulk_msg
-from main.plugins.helpers import get_link, screenshot
+from main.plugins.helpers import get_link
 
-class BatchTemp(object):
+class BatchTemp:
     IS_BATCH = {}
 
 batch = []
@@ -69,8 +67,8 @@ async def send_start(client: Client, message: Message):
     buttons = [[
         InlineKeyboardButton("❣️ Developer", url="https://t.me/infobyblackhat")
     ], [
-        InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url='https://t.me/chalobaatenkren'),
-        InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url='https://t.me/updatesbyeevils')
+        InlineKeyboardButton('🔍 Support Group', url='https://t.me/chalobaatenkren'),
+        InlineKeyboardButton('🤖 Update Channel', url='https://t.me/updatesbyeevils')
     ]]
     reply_markup = InlineKeyboardMarkup(buttons)
     await client.send_message(
@@ -278,7 +276,6 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
         os.remove(file)
     await client.delete_messages(message.chat.id, [smsg.id])
 
-
 # Function to get the type of message
 def get_message_type(msg):
     try:
@@ -330,7 +327,7 @@ def get_message_type(msg):
         pass
 
 # Batch command handler
-@aman.on(events.NewMessage(incoming=True, pattern='/batch'))
+@events.register(events.NewMessage(incoming=True, pattern='/batch'))
 async def _batch(event):
     s = False
     if f'{event.sender_id}' in batch:
@@ -379,7 +376,7 @@ async def _batch(event):
             ids.clear()
             batch.clear()
 
-@aman.on(events.callbackquery.CallbackQuery(data="cancel"))
+@events.register(events.callbackquery.CallbackQuery(data="cancel"))
 async def cancel(event):
     ids.clear()
     batch.clear()
@@ -452,7 +449,7 @@ C = "/cancel"
 START_PIC = "https://telegra.ph/file/c37f3eaf3e59e7e64fde7.png"
 TEXT = "👋 Hi, This is 'Paid Restricted Content Saver' bot Made with ❤️ by __**Legend Union**__."
 
-@aman.on(events.NewMessage(pattern=f"^{C}"))
+@events.register(events.NewMessage(pattern=f"^{C}"))
 async def start_command(event):
     # Creating inline keyboard with buttons
     buttons = [
