@@ -33,17 +33,19 @@ class BatchProcessor:
 
 batch_processor = BatchProcessor()
 
-async def write_progress(current, total, file_id, type_, message):
+async def progress(current, total, message, type_):
     try:
         percentage = current * 100 / total
         await message.edit_text(f"{type_.capitalize()}ing: {percentage:.1f}%")
     except Exception as e:
-        print(f"Progress write error: {e}")
+        print(f"Progress update error: {e}")
 
 async def update_status_message(message, batch_info):
     try:
         percentage = batch_info['completed'] * 100 / batch_info['total']
-        await message.edit_text(f"Processing: {percentage:.1f}% ({batch_info['completed']}/{batch_info['total']})")
+        await message.edit_text(
+            f"Processing: {percentage:.1f}% ({batch_info['completed']}/{batch_info['total']})"
+        )
     except Exception as e:
         print(f"Status update error: {e}")
 
@@ -145,10 +147,13 @@ async def process_message(client, message, chat_id, message_id, status_message):
 
 async def download_media(client, message, message_id, status_message):
     try:
-        progress_callback = lambda current, total: asyncio.create_task(
-            write_progress(current, total, message_id, "download", status_message)
-        )
-        
+        async def progress_callback(current, total):
+            try:
+                percentage = current * 100 / total
+                await status_message.edit_text(f"Downloading: {percentage:.1f}%")
+            except Exception as e:
+                print(f"Download progress error: {e}")
+
         file_path = await client.download_media(
             message,
             progress=progress_callback
@@ -170,10 +175,13 @@ async def download_media(client, message, message_id, status_message):
 
 async def upload_media(client, original_message, downloaded_message, file_path, thumb_path, msg_type, status_message):
     try:
-        progress_callback = lambda current, total: asyncio.create_task(
-            write_progress(current, total, downloaded_message.id, "upload", status_message)
-        )
-        
+        async def progress_callback(current, total):
+            try:
+                percentage = current * 100 / total
+                await status_message.edit_text(f"Uploading: {percentage:.1f}%")
+            except Exception as e:
+                print(f"Upload progress error: {e}")
+
         if msg_type == "Document":
             await client.send_document(
                 original_message.chat.id,
@@ -193,8 +201,41 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
                 progress=progress_callback,
                 thumb=thumb_path
             )
-        # Add other media types as needed
-        
+        elif msg_type == "Audio":
+            await client.send_audio(
+                original_message.chat.id,
+                file_path,
+                caption=downloaded_message.caption,
+                progress=progress_callback
+            )
+        elif msg_type == "Photo":
+            await client.send_photo(
+                original_message.chat.id,
+                file_path,
+                caption=downloaded_message.caption,
+                progress=progress_callback
+            )
+        elif msg_type == "Voice":
+            await client.send_voice(
+                original_message.chat.id,
+                file_path,
+                caption=downloaded_message.caption,
+                progress=progress_callback
+            )
+        elif msg_type == "Sticker":
+            await client.send_sticker(
+                original_message.chat.id,
+                file_path,
+                progress=progress_callback
+            )
+        elif msg_type == "Animation":
+            await client.send_animation(
+                original_message.chat.id,
+                file_path,
+                caption=downloaded_message.caption,
+                progress=progress_callback
+            )
+            
     except Exception as e:
         print(f"Upload error: {e}")
     finally:
