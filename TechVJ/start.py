@@ -84,17 +84,20 @@ async def process_message(client, acc, message, datas, msg_id):
     try:
         if "https://t.me/c/" in message.text:
             chat_id = int("-100" + datas[4])
-            await handle_private(client, acc, message, chat_id, msg_id)
+            msg = await acc.get_messages(chat_id, msg_id)
         elif "https://t.me/b/" in message.text:
             username = datas[4]
-            await handle_private(client, acc, message, username, msg_id)
+            msg = await acc.get_messages(username, msg_id)
         else:
             username = datas[3]
             msg = await client.get_messages(username, msg_id)
-            if msg:
-                await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
-            else:
-                await client.send_message(message.chat.id, "The message is not available.", reply_to_message_id=message.id)
+
+        if msg is None or msg.empty:
+            # Skip the missing message without sending an error message
+            return
+
+        await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+
     except UsernameNotOccupied:
         await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
     except Exception as e:
@@ -104,7 +107,7 @@ async def process_message(client, acc, message, datas, msg_id):
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     msg = await acc.get_messages(chat_id, msg_id)
     if msg is None or msg.empty:
-        await client.send_message(message.chat.id, "The message does not exist or is empty.", reply_to_message_id=message.id)
+        # Skip the missing message without sending an error message
         return
 
     msg_type = get_message_type(msg)
