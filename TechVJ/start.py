@@ -33,40 +33,13 @@ class BatchProcessor:
 
 batch_processor = BatchProcessor()
 
-async def handle_download_status(client, message, file_id, progress):
-    status_file = f'download_{file_id}.txt'
-    try:
-        while os.path.exists(status_file):
-            with open(status_file, 'r') as f:
-                percentage = f.read().strip()
-            await message.edit_text(f"Downloading: {percentage}%")
-            await asyncio.sleep(2)
-    except Exception as e:
-        print(f"Download status error: {e}")
-    finally:
-        if os.path.exists(status_file):
-            os.remove(status_file)
-
-async def handle_upload_status(client, message, file_id, progress):
-    status_file = f'upload_{file_id}.txt'
-    try:
-        while os.path.exists(status_file):
-            with open(status_file, 'r') as f:
-                percentage = f.read().strip()
-            await message.edit_text(f"Uploading: {percentage}%")
-            await asyncio.sleep(2)
-    except Exception as e:
-        print(f"Upload status error: {e}")
-    finally:
-        if os.path.exists(status_file):
-            os.remove(status_file)
-
-def write_progress(current, total, file_id, type_):
-    status_file = f'{type_}_{file_id}.txt'
+def write_progress(current, total, file_id, type_, message):
     try:
         percentage = current * 100 / total
-        with open(status_file, 'w') as f:
-            f.write(f"{percentage:.1f}")
+        asyncio.run_coroutine_threadsafe(
+            message.edit_text(f"{type_.capitalize()}ing: {percentage:.1f}%"),
+            asyncio.get_event_loop()
+        )
     except Exception as e:
         print(f"Progress write error: {e}")
 
@@ -154,13 +127,13 @@ async def process_message(client, message, chat_id, message_id, status_message):
             return
             
         download_msg = await message.reply_text("Downloading...")
-        file_path = await download_media(client, msg, message_id, download_msg)
+        file_path, thumb_path = await download_media(client, msg, message_id, download_msg)
         
         if not file_path:
             await download_msg.delete()
             return
             
-        await upload_media(client, message, msg, file_path, msg_type, download_msg)
+        await upload_media(client, message, msg, file_path, thumb_path, msg_type, download_msg)
         
     except Exception as e:
         print(f"Message processing error: {e}")
@@ -171,16 +144,21 @@ async def download_media(client, message, message_id, status_message):
         file_path = await client.download_media(
             message,
             progress=write_progress,
-            progress_args=(message_id, "download")
+            progress_args=(message_id, "download", status_message)
         )
-        return file_path
+        
+        thumb_path = None
+        if message.video and message.video.thumbs:
+            thumb_path = await client.download_media(message.video.thumbs[0].file_id)
+
+        return file_path, thumb_path
     except Exception as e:
         print(f"Download error: {e}")
-        return None
+        return None, None
     finally:
         await status_message.delete()
 
-async def upload_media(client, original_message, downloaded_message, file_path, msg_type, status_message):
+async def upload_media(client, original_message, downloaded_message, file_path, thumb_path, msg_type, status_message):
     try:
         if msg_type == "Document":
             await client.send_document(
@@ -188,7 +166,8 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
                 file_path,
                 caption=downloaded_message.caption,
                 progress=write_progress,
-                progress_args=(downloaded_message.id, "upload")
+                progress_args=(downloaded_message.id, "upload", status_message),
+                thumb=thumb_path
             )
         elif msg_type == "Video":
             await client.send_video(
@@ -199,7 +178,8 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
                 width=downloaded_message.video.width,
                 height=downloaded_message.video.height,
                 progress=write_progress,
-                progress_args=(downloaded_message.id, "upload")
+                progress_args=(downloaded_message.id, "upload", status_message),
+                thumb=thumb_path
             )
         # Add other media types as needed
         
@@ -208,6 +188,8 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
+        if thumb_path and os.path.exists(thumb_path):
+            os.remove(thumb_path)
         await status_message.delete()
 
 def get_message_type(message):
