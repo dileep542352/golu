@@ -1,7 +1,7 @@
 import os
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.errors import UsernameNotOccupied
+from pyrogram.errors import UsernameNotOccupied, ChannelInvalid
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, ERROR_MESSAGE
 from database.db import db
@@ -93,13 +93,14 @@ async def process_message(client, acc, message, datas, msg_id):
             msg = await client.get_messages(username, msg_id)
 
         if msg is None or msg.empty:
-            # Skip the missing message without sending an error message
             return
 
         await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
 
     except UsernameNotOccupied:
         await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
+    except ChannelInvalid:
+        await client.send_message(message.chat.id, "The channel is invalid or the bot does not have access", reply_to_message_id=message.id)
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
@@ -107,7 +108,6 @@ async def process_message(client, acc, message, datas, msg_id):
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     msg = await acc.get_messages(chat_id, msg_id)
     if msg is None or msg.empty:
-        # Skip the missing message without sending an error message
         return
 
     msg_type = get_message_type(msg)
