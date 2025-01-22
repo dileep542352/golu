@@ -33,15 +33,19 @@ class BatchProcessor:
 
 batch_processor = BatchProcessor()
 
-def write_progress(current, total, file_id, type_, message):
+async def write_progress(current, total, file_id, type_, message):
     try:
         percentage = current * 100 / total
-        asyncio.run_coroutine_threadsafe(
-            message.edit_text(f"{type_.capitalize()}ing: {percentage:.1f}%"),
-            asyncio.get_event_loop()
-        )
+        await message.edit_text(f"{type_.capitalize()}ing: {percentage:.1f}%")
     except Exception as e:
         print(f"Progress write error: {e}")
+
+async def update_status_message(message, batch_info):
+    try:
+        percentage = batch_info['completed'] * 100 / batch_info['total']
+        await message.edit_text(f"Processing: {percentage:.1f}% ({batch_info['completed']}/{batch_info['total']})")
+    except Exception as e:
+        print(f"Status update error: {e}")
 
 @Client.on_message(filters.command(["start"]))
 async def start_command(client, message):
@@ -141,10 +145,13 @@ async def process_message(client, message, chat_id, message_id, status_message):
 
 async def download_media(client, message, message_id, status_message):
     try:
+        progress_callback = lambda current, total: asyncio.create_task(
+            write_progress(current, total, message_id, "download", status_message)
+        )
+        
         file_path = await client.download_media(
             message,
-            progress=write_progress,
-            progress_args=(message_id, "download", status_message)
+            progress=progress_callback
         )
         
         thumb_path = None
@@ -156,17 +163,23 @@ async def download_media(client, message, message_id, status_message):
         print(f"Download error: {e}")
         return None, None
     finally:
-        await status_message.delete()
+        try:
+            await status_message.delete()
+        except:
+            pass
 
 async def upload_media(client, original_message, downloaded_message, file_path, thumb_path, msg_type, status_message):
     try:
+        progress_callback = lambda current, total: asyncio.create_task(
+            write_progress(current, total, downloaded_message.id, "upload", status_message)
+        )
+        
         if msg_type == "Document":
             await client.send_document(
                 original_message.chat.id,
                 file_path,
                 caption=downloaded_message.caption,
-                progress=write_progress,
-                progress_args=(downloaded_message.id, "upload", status_message),
+                progress=progress_callback,
                 thumb=thumb_path
             )
         elif msg_type == "Video":
@@ -177,8 +190,7 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
                 duration=downloaded_message.video.duration,
                 width=downloaded_message.video.width,
                 height=downloaded_message.video.height,
-                progress=write_progress,
-                progress_args=(downloaded_message.id, "upload", status_message),
+                progress=progress_callback,
                 thumb=thumb_path
             )
         # Add other media types as needed
@@ -190,7 +202,10 @@ async def upload_media(client, original_message, downloaded_message, file_path, 
             os.remove(file_path)
         if thumb_path and os.path.exists(thumb_path):
             os.remove(thumb_path)
-        await status_message.delete()
+        try:
+            await status_message.delete()
+        except:
+            pass
 
 def get_message_type(message):
     if message.document:
