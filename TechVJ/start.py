@@ -413,5 +413,3 @@ async def start_command(event):
         caption=TEXT,
         buttons=buttons
     )
-
-TEXTING = """
