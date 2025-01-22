@@ -104,8 +104,7 @@ async def process_message(client, acc, message, datas, msg_id):
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     msg = await acc.get_messages(chat_id, msg_id)
     if msg is None or msg.empty:
-        await client.send_message(message.chat.id, "The message does not exist or is empty.", reply_to_message_id=message.id)
-        return
+        return  # Removed message sending part
 
     msg_type = get_message_type(msg)
     if not msg_type:
