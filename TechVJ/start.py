@@ -1,9 +1,7 @@
 import os
 import asyncio
-from pyrogram import Client, filters, enums
-from pyrogram.errors import (
-    UsernameNotOccupied,
-)
+from pyrogram import Client, filters
+from pyrogram.errors import UsernameNotOccupied
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, ERROR_MESSAGE
 from database.db import db
@@ -93,16 +91,20 @@ async def process_message(client, acc, message, datas, msg_id):
         else:
             username = datas[3]
             msg = await client.get_messages(username, msg_id)
-            await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+            if msg:
+                await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+            else:
+                await client.send_message(message.chat.id, "The message is not available.", reply_to_message_id=message.id)
     except UsernameNotOccupied:
         await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
 
-async def handle_private(client: Client, acc, message: Message, chat_id: int, msg_id: int):
+async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     msg = await acc.get_messages(chat_id, msg_id)
-    if msg.empty:
+    if msg is None or msg.empty:
+        await client.send_message(message.chat.id, "The message does not exist or is empty.", reply_to_message_id=message.id)
         return
 
     msg_type = get_message_type(msg)
@@ -126,7 +128,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id: int, ms
     caption = msg.caption or None
 
     try:
-        await send_media(client, msg, chat, file, caption, message.id)
+        await send_media(client, acc, msg, chat, file, caption, message.id)
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
@@ -136,13 +138,15 @@ async def handle_private(client: Client, acc, message: Message, chat_id: int, ms
         os.remove(file)
     await client.delete_messages(chat, [smsg.id])
 
-async def send_media(client, msg, chat, file, caption, reply_to_message_id):
+async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
+    thumb = await download_thumb(acc, msg)
+
     if msg_type == "Document":
-        await client.send_document(chat, file, thumb=await download_thumb(msg), caption=caption, reply_to_message_id=reply_to_message_id)
+        await client.send_document(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Video":
         await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
-                                thumb=await download_thumb(msg), caption=caption, reply_to_message_id=reply_to_message_id)
+                                thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Animation":
         await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Sticker":
@@ -150,15 +154,18 @@ async def send_media(client, msg, chat, file, caption, reply_to_message_id):
     elif msg_type == "Voice":
         await client.send_voice(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Audio":
-        await client.send_audio(chat, file, thumb=await download_thumb(msg), caption=caption, reply_to_message_id=reply_to_message_id)
+        await client.send_audio(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Photo":
         await client.send_photo(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
     elif msg_type == "Text":
         await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=reply_to_message_id)
 
-async def download_thumb(msg):
+async def download_thumb(acc, msg):
     try:
-        return await acc.download_media(msg.document.thumbs[0].file_id)
+        if msg.document and msg.document.thumbs:
+            return await acc.download_media(msg.document.thumbs[0].file_id)
+        elif msg.video and msg.video.thumbs:
+            return await acc.download_media(msg.video.thumbs[0].file_id)
     except:
         return None
 
