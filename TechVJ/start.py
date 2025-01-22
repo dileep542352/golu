@@ -1,37 +1,26 @@
-import os
-import asyncio
-import logging
-from pyrogram import Client, filters, enums
-from pyrogram.errors import FloodWait, UsernameNotOccupied
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from telethon import events, Button
-from telethon.errors import FloodWait as TelethonFloodWait
+# Don't Remove Credit Tg - @VJ_Botz
+# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
+# Ask Doubt on telegram @KingVJ01
 
+import os
+import asyncio 
+import pyrogram
+from pyrogram import Client, filters, enums
+from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated, UserAlreadyParticipant, InviteHashExpired, UsernameNotOccupied
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message 
 from config import API_ID, API_HASH, ERROR_MESSAGE
 from database.db import db
 from TechVJ.strings import HELP_TXT
-from main.plugins.pyroplug import check, get_bulk_msg
-from main.plugins.helpers import get_link
 
-class BatchTemp:
+class batch_temp(object):
     IS_BATCH = {}
 
-batch = []
-ids = []
-
-# Initialize logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-logging.getLogger("pyrogram").setLevel(logging.WARNING)
-logging.getLogger("telethon").setLevel(logging.WARNING)
-
-# Progress tracking functions
 async def downstatus(client, statusfile, message, chat):
-    while not os.path.exists(statusfile):
+    while True:
+        if os.path.exists(statusfile):
+            break
         await asyncio.sleep(3)
+      
     while os.path.exists(statusfile):
         with open(statusfile, "r") as downread:
             txt = downread.read()
@@ -42,8 +31,10 @@ async def downstatus(client, statusfile, message, chat):
             await asyncio.sleep(5)
 
 async def upstatus(client, statusfile, message, chat):
-    while not os.path.exists(statusfile):
-        await asyncio.sleep(3)
+    while True:
+        if os.path.exists(statusfile):
+            break
+        await asyncio.sleep(3)      
     while os.path.exists(statusfile):
         with open(statusfile, "r") as upread:
             txt = upread.read()
@@ -61,157 +52,319 @@ def progress(current, total, message, type):
 async def send_start(client: Client, message: Message):
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
-    
     buttons = [[
-        InlineKeyboardButton("❣️ Developer", url="https://t.me/infobyblackhat")
-    ], [
-        InlineKeyboardButton('🔍 Support Group', url='https://t.me/chalobaatenkren'),
-        InlineKeyboardButton('🤖 Update Channel', url='https://t.me/updatesbyeevils')
+        InlineKeyboardButton("❣️ Developer", url = "https://t.me/kingvj01")
+    ],[
+        InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url='https://t.me/vj_bot_disscussion'),
+        InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url='https://t.me/vj_botz')
     ]]
     reply_markup = InlineKeyboardMarkup(buttons)
-    
     await client.send_message(
-        chat_id=message.chat.id,
-        text=f"<b>👋 Hi {message.from_user.mention}, I am Save Restricted Content Bot. Send me any public or private restricted content link to clone it to your desired channel.\n\nFor downloading restricted content /login first.\n\nKnow more about usage with /help</b>",
-        reply_markup=reply_markup,
+        chat_id=message.chat.id, 
+        text=f"<b>👋 Hi {message.from_user.mention}, I am Save Restricted Content Bot, I can send you restricted content by its post link.\n\nFor downloading restricted content /login first.\n\nKnow how to use bot by - /help</b>", 
+        reply_markup=reply_markup, 
         reply_to_message_id=message.id
     )
+    return
 
 @Client.on_message(filters.command(["help"]))
 async def send_help(client: Client, message: Message):
     await client.send_message(
-        chat_id=message.chat.id,
-        text=HELP_TXT
+        chat_id=message.chat.id, 
+        text=f"{HELP_TXT}"
     )
 
 @Client.on_message(filters.command(["cancel"]))
 async def send_cancel(client: Client, message: Message):
-    BatchTemp.IS_BATCH[message.from_user.id] = True
+    batch_temp.IS_BATCH[message.from_user.id] = True
     await client.send_message(
-        chat_id=message.chat.id,
-        text="**Batch Processing Cancelled.**"
+        chat_id=message.chat.id, 
+        text="**Batch Successfully Cancelled.**"
     )
 
 @Client.on_message(filters.text & filters.private)
-async def handle_batch_messages(client: Client, message: Message):
-    """Handle batch message processing"""
-    if "https://t.me/" not in message.text:
-        return
+async def save(client: Client, message: Message):
+    if "https://t.me/" in message.text:
+        if batch_temp.IS_BATCH.get(message.from_user.id) == False:
+            return await message.reply_text("**One Task Is Already Processing. Wait For Complete It. If You Want To Cancel This Task Then Use - /cancel**")
+        datas = message.text.split("/")
+        temp = datas[-1].replace("?single","").split("-")
+        fromID = int(temp[0].strip())
+        try:
+            toID = int(temp[1].strip())
+        except:
+            toID = fromID
+        batch_temp.IS_BATCH[message.from_user.id] = False
+        for msgid in range(fromID, toID+1):
+            if batch_temp.IS_BATCH.get(message.from_user.id): break
+            user_data = await db.get_session(message.from_user.id)
+            if user_data is None:
+                await message.reply("**For Downloading Restricted Content You Have To /login First.**")
+                batch_temp.IS_BATCH[message.from_user.id] = True
+                return
+            try:
+                acc = Client("saverestricted", session_string=user_data, api_hash=API_HASH, api_id=API_ID)
+                await acc.connect()
+            except:
+                batch_temp.IS_BATCH[message.from_user.id] = True
+                return await message.reply("**Your Login Session Expired. So /logout First Then Login Again By - /login**")
+            
+            if "https://t.me/c/" in message.text:
+                chatid = int("-100" + datas[4])
+                try:
+                    await handle_private(client, acc, message, chatid, msgid)
+                except Exception as e:
+                    if ERROR_MESSAGE == True:
+                        await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+    
+            elif "https://t.me/b/" in message.text:
+                username = datas[4]
+                try:
+                    await handle_private(client, acc, message, username, msgid)
+                except Exception as e:
+                    if ERROR_MESSAGE == True:
+                        await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+            
+            else:
+                username = datas[3]
+                try:
+                    msg = await client.get_messages(username, msgid)
+                except UsernameNotOccupied: 
+                    await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
+                    return
+                try:
+                    await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+                except:
+                    try:    
+                        await handle_private(client, acc, message, username, msgid)               
+                    except Exception as e:
+                        if ERROR_MESSAGE == True:
+                            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
 
-    if not await db.is_user_exist(message.from_user.id):
-        return await message.reply("Please /start the bot first!")
+            await asyncio.sleep(3)
+        batch_temp.IS_BATCH[message.from_user.id] = True
 
-    if BatchTemp.IS_BATCH.get(message.from_user.id) is False:
-        return await message.reply_text(
-            "**A task is already in progress. Wait for it to complete or use /cancel**"
-        )
+async def handle_private(client: Client, acc, message: Message, chatid: int, msgid: int):
+    msg: Message = await acc.get_messages(chatid, msgid)
+    if msg.empty: return 
+    msg_type = get_message_type(msg)
+    if not msg_type: return 
+    chat = message.chat.id
+    if batch_temp.IS_BATCH.get(message.from_user.id): return 
+    if "Text" == msg_type:
+        try:
+            await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+            return 
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+            return 
 
-    # Extract the range from message
+    smsg = await client.send_message(message.chat.id, '**Downloading**', reply_to_message_id=message.id)
+    asyncio.create_task(downstatus(client, f'{message.id}downstatus.txt', smsg, chat))
     try:
-        link_parts = message.text.strip().split("/")
-        if len(link_parts) < 4:
-            return await message.reply("Invalid link format!")
+        file = await acc.download_media(msg, progress=progress, progress_args=[message,"down"])
+        os.remove(f'{message.id}downstatus.txt')
+    except Exception as e:
+        if ERROR_MESSAGE == True:
+            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML) 
+        return await smsg.delete()
+    if batch_temp.IS_BATCH.get(message.from_user.id): return 
+    asyncio.create_task(upstatus(client, f'{message.id}upstatus.txt', smsg, chat))
 
-        range_part = link_parts[-1].split("-")
-        if len(range_part) != 2:
-            return await message.reply("Please provide range in format: start-end")
-
-        start_id = int(range_part[0].strip())
-        end_id = int(range_part[1].strip())
-
-        if end_id < start_id:
-            return await message.reply("End ID must be greater than Start ID!")
-
-        if end_id - start_id > 100:  # You can adjust this limit
-            return await message.reply("Maximum 100 messages allowed in one batch!")
-
-        # Set batch processing flag
-        BatchTemp.IS_BATCH[message.from_user.id] = False
+    if msg.caption:
+        caption = msg.caption
+    else:
+        caption = None
+    if batch_temp.IS_BATCH.get(message.from_user.id): return 
+            
+    if "Document" == msg_type:
+        try:
+            ph_path = await acc.download_media(msg.document.thumbs[0].file_id)
+        except:
+            ph_path = None
         
-        # Get user session
+        try:
+            await client.send_document(chat, file, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        if ph_path != None: os.remove(ph_path)
+        
+
+    elif "Video" == msg_type:
+        try:
+            ph_path = await acc.download_media(msg.video.thumbs[0].file_id)
+        except:
+            ph_path = None
+        
+        try:
+            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        if ph_path != None: os.remove(ph_path)
+
+    elif "Animation" == msg_type:
+        try:
+            await client.send_animation(chat, file, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        
+    elif "Sticker" == msg_type:
+        try:
+            await client.send_sticker(chat, file, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)     
+
+    elif "Voice" == msg_type:
+        try:
+            await client.send_voice(chat, file, caption=caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+
+    elif "Audio" == msg_type:
+        try:
+            ph_path = await acc.download_media(msg.audio.thumbs[0].file_id)
+        except:
+            ph_path = None
+
+        try:
+            await client.send_audio(chat, file, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])   
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        
+        if ph_path != None: os.remove(ph_path)
+
+    elif "Photo" == msg_type:
+        try:
+            await client.send_photo(chat, file, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+        except:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+    
+    if os.path.exists(f'{message.id}upstatus.txt'): 
+        os.remove(f'{message.id}upstatus.txt')
+        os.remove(file)
+    await client.delete_messages(message.chat.id,[smsg.id])
+
+def get_message_type(msg: pyrogram.types.messages_and_media.message.Message):
+    try:
+        msg.document.file_id
+        return "Document"
+    except:
+        pass
+
+    try:
+        msg.video.file_id
+        return "Video"
+    except:
+        pass
+
+    try:
+        msg.animation.file_id
+        return "Animation"
+    except:
+        pass
+
+    try:
+        msg.sticker.file_id
+        return "Sticker"
+    except:
+        pass
+
+    try:
+        msg.voice.file_id
+        return "Voice"
+    except:
+        pass
+
+    try:
+        msg.audio.file_id
+        return "Audio"
+    except:
+        pass
+
+    try:
+        msg.photo.file_id
+        return "Photo"
+    except:
+        pass
+
+    try:
+        msg.text
+        return "Text"
+    except:
+        pass
+
+@Client.on_message(filters.command(["batch"]))
+async def batch(client: Client, message: Message):
+    if batch_temp.IS_BATCH.get(message.from_user.id) == False:
+        return await message.reply_text("**One Task Is Already Processing. Wait For Complete It. If You Want To Cancel This Task Then Use - /cancel**")
+    
+    await message.reply_text("Send me the message link you want to start saving from, as a reply to this message.")
+    link = await client.listen(message.chat.id)
+    await message.reply_text("Send me the number of files/range you want to save from the given message, as a reply to this message.")
+    _range = await client.listen(message.chat.id)
+    
+    try:
+        value = int(_range.text)
+        if value > 1000000:
+            return await message.reply_text("You can only get upto 100000 files in a single batch.")
+    except ValueError:
+        return await message.reply_text("Range must be an integer!")
+    
+    batch_temp.IS_BATCH[message.from_user.id] = False
+    for i in range(value):
+        if batch_temp.IS_BATCH.get(message.from_user.id): break
         user_data = await db.get_session(message.from_user.id)
         if user_data is None:
-            await message.reply("**Please /login first to download restricted content.**")
-            BatchTemp.IS_BATCH[message.from_user.id] = True
+            await message.reply("**For Downloading Restricted Content You Have To /login First.**")
+            batch_temp.IS_BATCH[message.from_user.id] = True
             return
-
-        # Initialize client with user session
         try:
-            acc = Client(
-                "saverestricted",
-                session_string=user_data,
-                api_hash=API_HASH,
-                api_id=API_ID
-            )
+            acc = Client("saverestricted", session_string=user_data, api_hash=API_HASH, api_id=API_ID)
             await acc.connect()
-        except Exception as e:
-            BatchTemp.IS_BATCH[message.from_user.id] = True
-            return await message.reply(
-                "**Your login session has expired. Please /logout and /login again.**"
-            )
-
-        # Progress message
-        progress_msg = await message.reply("**Starting batch process...**")
+        except:
+            batch_temp.IS_BATCH[message.from_user.id] = True
+            return await message.reply("**Your Login Session Expired. So /logout First Then Login Again By - /login**")
         
-        # Process messages in range
-        for msg_id in range(start_id, end_id + 1):
-            if BatchTemp.IS_BATCH.get(message.from_user.id):
-                break
-
+        if "https://t.me/c/" in link.text:
+            chatid = int("-100" + link.text.split("/")[4])
             try:
-                await progress_msg.edit_text(f"**Processing message {msg_id}...**")
-                
-                # Handle private channel messages
-                if "https://t.me/c/" in message.text:
-                    chat_id = int("-100" + link_parts[4])
-                    msg = await acc.get_messages(chat_id, msg_id)
-                else:
-                    # Handle public channel messages
-                    username = link_parts[3]
-                    msg = await acc.get_messages(username, msg_id)
-
-                if msg and not msg.empty:
-                    await msg.copy(
-                        message.chat.id,
-                        caption=msg.caption if msg.caption else None,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                
-                await asyncio.sleep(2)  # Delay to avoid flood wait
-
-            except FloodWait as e:
-                await progress_msg.edit_text(f"**FloodWait: Sleeping for {e.value} seconds**")
-                await asyncio.sleep(e.value)
-                continue
+                await handle_private(client, acc, message, chatid, i)
             except Exception as e:
-                await message.reply(f"**Error processing message {msg_id}: {str(e)}**")
-                continue
+                if ERROR_MESSAGE == True:
+                    await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+    
+        elif "https://t.me/b/" in link.text:
+            username = link.text.split("/")[4]
+            try:
+                await handle_private(client, acc, message, username, i)
+            except Exception as e:
+                if ERROR_MESSAGE == True:
+                    await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+        
+        else:
+            username = link.text.split("/")[3]
+            try:
+                msg = await client.get_messages(username, i)
+            except UsernameNotOccupied: 
+                await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
+                return
+            try:
+                await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+            except:
+                try:    
+                    await handle_private(client, acc, message, username, i)               
+                except Exception as e:
+                    if ERROR_MESSAGE == True:
+                        await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
 
-        BatchTemp.IS_BATCH[message.from_user.id] = True
-        await progress_msg.edit_text("**Batch processing completed!**")
-        await acc.disconnect()
-
-    except ValueError:
-        await message.reply("**Please provide valid message IDs in the range!**")
-    except Exception as e:
-        await message.reply(f"**An error occurred: {str(e)}**")
-        BatchTemp.IS_BATCH[message.from_user.id] = True
-
-# Constants
-START_PIC = "https://telegra.ph/file/c37f3eaf3e59e7e64fde7.png"
-TEXT = "👋 Hi, This is 'Paid Restricted Content Saver' bot Made with ❤️ by __**Legend Union**__."
-
-def main():
-    # Initialize your bot here
-    app = Client(
-        "SaveRestrictedContentBot",
-        api_id=API_ID,
-        api_hash=API_HASH,
-        # Add your bot token here
-    )
-
-    print("Bot Started!")
-    app.run()
-
-if __name__ == "__main__":
-    main()
+        await asyncio.sleep(3)
+    batch_temp.IS_BATCH[message.from_user.id] = True
+    await message.reply_text("**Batch process completed successfully!**")
