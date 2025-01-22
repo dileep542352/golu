@@ -10,3 +10,7 @@ tgcrypto
 python-dotenv
 aiofiles
 aiohttp
+telethon==1.29.0
+pymongo==3.12.1
+sqlalchemy==1.4.47
+
