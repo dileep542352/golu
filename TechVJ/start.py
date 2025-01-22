@@ -53,7 +53,7 @@ def progress(current, total, message, type):
     with open(f'{message.id}{type}status.txt', "w") as fileup:
         fileup.write(f"{current * 100 / total:.1f}%")
 
-@PyroClient.on_message(pyro_client, filters.command(["start"]))
+@pyro_client.on_message(filters.command(["start"]))
 async def send_start(client: PyroClient, message: Message):
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
@@ -71,14 +71,14 @@ async def send_start(client: PyroClient, message: Message):
         reply_to_message_id=message.id
     )
 
-@PyroClient.on_message(pyro_client, filters.command(["help"]))
+@pyro_client.on_message(filters.command(["help"]))
 async def send_help(client: PyroClient, message: Message):
     await client.send_message(
         chat_id=message.chat.id,
         text=f"{HELP_TXT}"
     )
 
-@PyroClient.on_message(pyro_client, filters.command(["cancel"]))
+@pyro_client.on_message(filters.command(["cancel"]))
 async def send_cancel(client: PyroClient, message: Message):
     batch_temp.IS_BATCH[message.from_user.id] = True
     await client.send_message(
@@ -86,7 +86,7 @@ async def send_cancel(client: PyroClient, message: Message):
         text="**Batch Successfully Cancelled.**"
     )
 
-@PyroClient.on_message(pyro_client, filters.text & filters.private)
+@pyro_client.on_message(filters.text & filters.private)
 async def save(client: PyroClient, message: Message):
     if "https://t.me/" in message.text:
         if batch_temp.IS_BATCH.get(message.from_user.id) == False:
