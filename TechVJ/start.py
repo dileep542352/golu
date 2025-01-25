@@ -90,52 +90,51 @@ async def process_message(client, acc, message, datas, msg_id):
             await handle_private(client, acc, message, username, msg_id)
         else:
             username = datas[3]
-            msg = await client.get_messages(username, msg_id)
-            if msg:
-                await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
-            else:
-                await client.send_message(message.chat.id, "The message is not available.", reply_to_message_id=message.id)
+            try:
+                msg = await acc.get_messages(username, msg_id)
+                if msg and not msg.empty:
+                    await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+            except Exception as e:
+                if ERROR_MESSAGE:
+                    await client.send_message(message.chat.id, f"Error accessing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
     except UsernameNotOccupied:
         await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
     except Exception as e:
         if ERROR_MESSAGE:
-            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+            await client.send_message(message.chat.id, f"Error: {str(e)}", reply_to_message_id=message.id)
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
-    msg = await acc.get_messages(chat_id, msg_id)
-    if msg is None or msg.empty:
-        return  # Removed message sending part
-
-    msg_type = get_message_type(msg)
-    if not msg_type:
-        return
-
-    chat = message.chat.id
-    smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
-    asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
-
     try:
+        msg = await acc.get_messages(chat_id, msg_id)
+        if not msg or msg.empty:
+            return
+
+        msg_type = get_message_type(msg)
+        if not msg_type:
+            return
+
+        chat = message.chat.id
+        smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
+        asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
+
         file = await acc.download_media(msg, progress=progress, progress_args=[message, "down"])
         os.remove(f'{message.id}downstatus.txt')
-    except Exception as e:
-        if ERROR_MESSAGE:
-            await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
-        await smsg.delete()
-        return
 
-    asyncio.create_task(update_status(client, f'{message.id}upstatus.txt', smsg, chat, "Uploaded"))
-    caption = msg.caption or None
+        asyncio.create_task(update_status(client, f'{message.id}upstatus.txt', smsg, chat, "Uploaded"))
+        caption = msg.caption or None
 
-    try:
         await send_media(client, acc, msg, chat, file, caption, message.id)
+
+        if os.path.exists(f'{message.id}upstatus.txt'):
+            os.remove(f'{message.id}upstatus.txt')
+            os.remove(file)
+        await smsg.delete()
+
     except Exception as e:
         if ERROR_MESSAGE:
-            await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
-
-    if os.path.exists(f'{message.id}upstatus.txt'):
-        os.remove(f'{message.id}upstatus.txt')
-        os.remove(file)
-    await client.delete_messages(chat, [smsg.id])
+            await client.send_message(chat, f"Error processing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
+        if 'smsg' in locals():
+            await smsg.delete()
 
 async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
