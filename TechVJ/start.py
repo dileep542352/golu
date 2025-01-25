@@ -93,7 +93,11 @@ async def process_message(client, acc, message, datas, msg_id):
             try:
                 msg = await acc.get_messages(username, msg_id)
                 if msg and not msg.empty:
-                    await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+                    msg_type = get_message_type(msg)
+                    if msg_type and msg_type != "Text":
+                        await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+                    else:
+                        await client.send_message(message.chat.id, f"Message {msg_id} is a text message and cannot be downloaded.", reply_to_message_id=message.id)
             except Exception as e:
                 if ERROR_MESSAGE:
                     await client.send_message(message.chat.id, f"Error accessing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
@@ -110,7 +114,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             return
 
         msg_type = get_message_type(msg)
-        if not msg_type:
+        if not msg_type or msg_type == "Text":
             return
 
         chat = message.chat.id
