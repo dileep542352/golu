@@ -122,41 +122,13 @@ async def process_message(client, acc, message, datas, msg_id):
                 msg = await acc.get_messages(chat.id, msg_id)
                 
                 if msg and not msg.empty:
-                    chat_id = message.chat.id
-                    
-                    if msg.text:
-                        await client.send_message(
-                            chat_id,
-                            text=msg.text,
-                            entities=msg.entities,
-                            reply_to_message_id=message.id
-                        )
-                        return
-
-                    smsg = await client.send_message(chat_id, '**Downloading...**', reply_to_message_id=message.id)
-                    
-                    try:
-                        file = await acc.download_media(
-                            msg,
-                            progress=progress,
-                            progress_args=[message, "down"]
-                        )
-                        
-                        if file:
-                            await smsg.edit_text("**Uploading...**")
-                            caption = msg.caption or None
-                            await send_media(client, acc, msg, chat_id, file, caption, message.id)
-                            if os.path.exists(file):
-                                os.remove(file)
-                    except Exception:
-                        await client.copy_message(
-                            chat_id=chat_id,
-                            from_chat_id=chat.id,
-                            message_id=msg.id,
-                            reply_to_message_id=message.id
-                        )
-                    finally:
-                        await smsg.delete()
+                    # Direct copy for public groups
+                    await client.copy_message(
+                        chat_id=message.chat.id,
+                        from_chat_id=chat.id,
+                        message_id=msg.id,
+                        reply_to_message_id=message.id
+                    )
                         
             except Exception as e:
                 error_text = str(e)
@@ -222,7 +194,6 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             )
             
             if file:
-                await smsg.edit_text("**Uploading...**")
                 caption = msg.caption or None
                 await send_media(client, acc, msg, chat, file, caption, message.id)
                 if os.path.exists(file):
