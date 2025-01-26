@@ -91,6 +91,16 @@ async def process_message(client, acc, message, datas, msg_id):
         else:
             username = datas[3]
             try:
+                # Check if the bot is a member of the public group/channel
+                try:
+                    chat = await acc.get_chat(username)
+                    if chat.type in ["group", "supergroup", "channel"]:
+                        # Ensure the bot is a member of the group/channel
+                        await acc.join_chat(username)
+                except Exception as e:
+                    await client.send_message(message.chat.id, f"Error joining group/channel: {str(e)}", reply_to_message_id=message.id)
+                    return
+
                 msg = await acc.get_messages(username, msg_id)
                 if msg and not msg.empty:
                     if msg.text:
@@ -109,24 +119,17 @@ async def process_message(client, acc, message, datas, msg_id):
                             msg.id,
                             reply_to_message_id=message.id
                         )
+            except UsernameNotOccupied:
+                await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
             except Exception as e:
                 if ERROR_MESSAGE:
                     await client.send_message(message.chat.id, f"Error accessing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
-    except UsernameNotOccupied:
-        await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(message.chat.id, f"Error: {str(e)}", reply_to_message_id=message.id)
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     try:
-        if "https://t.me/c/" in message.text:
-            # Handle public channel
-            chat_id = int("-100" + str(chat_id))
-        else:
-            # Handle private group
-            pass
-
         msg = await acc.get_messages(chat_id, msg_id)
         if not msg or msg.empty:
             return
