@@ -62,7 +62,15 @@ async def save(client: Client, message: Message):
         return await message.reply_text("**One task is already in progress. Use /cancel to stop it.**")
 
     datas = message.text.split("/")
-    from_id, to_id = map(int, datas[-1].replace("?single", "").split("-"))
+    try:
+        msg_range = datas[-1].replace("?single", "")
+        if "-" in msg_range:
+            from_id, to_id = map(int, msg_range.split("-"))
+        else:
+            from_id = to_id = int(msg_range)
+    except:
+        return await message.reply_text("**Invalid message link format.**")
+
     BatchStatus.IS_BATCH[message.from_user.id] = False
 
     user_data = await db.get_session(message.from_user.id)
@@ -90,75 +98,123 @@ async def process_message(client, acc, message, datas, msg_id):
             await handle_private(client, acc, message, username, msg_id)
         else:
             username = datas[3]
-            msg = await client.get_messages(username, msg_id)
-            if msg:
-                await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+            msg = await acc.get_messages(username, msg_id)
+            if msg and not msg.empty:
+                if msg.text:
+                    await client.send_message(
+                        message.chat.id,
+                        text=msg.text,
+                        entities=msg.entities,
+                        reply_to_message_id=message.id
+                    )
+                else:
+                    await client.copy_message(
+                        message.chat.id,
+                        msg.chat.id,
+                        msg.id,
+                        reply_to_message_id=message.id
+                    )
             else:
-                await client.send_message(message.chat.id, "The message is not available.", reply_to_message_id=message.id)
+                await client.send_message(
+                    message.chat.id,
+                    "The message is not available.",
+                    reply_to_message_id=message.id
+                )
     except UsernameNotOccupied:
-        await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
+        await client.send_message(
+            message.chat.id,
+            "The username is not occupied by anyone",
+            reply_to_message_id=message.id
+        )
     except Exception as e:
         if ERROR_MESSAGE:
-            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
+            await client.send_message(
+                message.chat.id,
+                f"Error: {e}",
+                reply_to_message_id=message.id
+            )
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
-    msg = await acc.get_messages(chat_id, msg_id)
-    if msg is None or msg.empty:
-        await client.send_message(message.chat.id, "The message does not exist or is empty.", reply_to_message_id=message.id)
-        return
-
-    msg_type = get_message_type(msg)
-    if not msg_type:
-        return
-
-    chat = message.chat.id
-    smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
-    asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
-
     try:
+        msg = await acc.get_messages(chat_id, msg_id)
+        if msg is None or msg.empty:
+            await client.send_message(
+                message.chat.id,
+                "The message does not exist or is empty.",
+                reply_to_message_id=message.id
+            )
+            return
+
+        # Handle text messages directly
+        if msg.text:
+            await client.send_message(
+                message.chat.id,
+                text=msg.text,
+                entities=msg.entities,
+                reply_to_message_id=message.id
+            )
+            return
+
+        msg_type = get_message_type(msg)
+        if not msg_type:
+            await client.send_message(
+                message.chat.id,
+                "Unsupported message type.",
+                reply_to_message_id=message.id
+            )
+            return
+
+        chat = message.chat.id
+        smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
+        asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
+
         file = await acc.download_media(msg, progress=progress, progress_args=[message, "down"])
         os.remove(f'{message.id}downstatus.txt')
-    except Exception as e:
-        if ERROR_MESSAGE:
-            await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
-        await smsg.delete()
-        return
 
-    asyncio.create_task(update_status(client, f'{message.id}upstatus.txt', smsg, chat, "Uploaded"))
-    caption = msg.caption or None
+        asyncio.create_task(update_status(client, f'{message.id}upstatus.txt', smsg, chat, "Uploaded"))
+        caption = msg.caption or None
 
-    try:
         await send_media(client, acc, msg, chat, file, caption, message.id)
+
+        if os.path.exists(f'{message.id}upstatus.txt'):
+            os.remove(f'{message.id}upstatus.txt')
+            os.remove(file)
+        await client.delete_messages(chat, [smsg.id])
+
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
-
-    if os.path.exists(f'{message.id}upstatus.txt'):
-        os.remove(f'{message.id}upstatus.txt')
-        os.remove(file)
-    await client.delete_messages(chat, [smsg.id])
+        if 'smsg' in locals():
+            await smsg.delete()
 
 async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
     thumb = await download_thumb(acc, msg)
 
-    if msg_type == "Document":
-        await client.send_document(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Video":
-        await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
-                                thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Animation":
-        await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Sticker":
-        await client.send_sticker(chat, file, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Voice":
-        await client.send_voice(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Audio":
-        await client.send_audio(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Photo":
-        await client.send_photo(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
-    elif msg_type == "Text":
-        await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=reply_to_message_id)
+    try:
+        if msg_type == "Document":
+            await client.send_document(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Video":
+            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
+                                    thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Animation":
+            await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Sticker":
+            await client.send_sticker(chat, file, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Voice":
+            await client.send_voice(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Audio":
+            await client.send_audio(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Photo":
+            await client.send_photo(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
+        elif msg_type == "Text":
+            await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=reply_to_message_id)
+    finally:
+        if thumb:
+            try:
+                os.remove(thumb)
+            except:
+                pass
 
 async def download_thumb(acc, msg):
     try:
