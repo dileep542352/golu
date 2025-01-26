@@ -129,6 +129,7 @@ async def process_message(client, acc, message, datas, msg_id):
             await client.send_message(message.chat.id, f"Error: {str(e)}", reply_to_message_id=message.id)
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
+    smsg = None  # Initialize smsg to avoid UnboundLocalError
     try:
         msg = await acc.get_messages(chat_id, msg_id)
         if not msg or msg.empty:
@@ -148,7 +149,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
         if not msg_type:
             return
 
-        chat = message.chat.id
+        chat = message.chat.id  # Define chat here
         smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
         asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
 
@@ -167,8 +168,10 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
 
     except Exception as e:
         if ERROR_MESSAGE:
+            # Ensure chat is defined before using it
+            chat = message.chat.id if 'chat' not in locals() else chat
             await client.send_message(chat, f"Error processing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
-        if 'smsg' in locals():
+        if smsg:  # Check if smsg is defined before trying to delete it
             await smsg.delete()
 
 async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
