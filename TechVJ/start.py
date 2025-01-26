@@ -96,37 +96,62 @@ async def process_message(client, acc, message, datas, msg_id):
                     chat = await acc.get_chat(username)
                     if chat.type in ["group", "supergroup", "channel"]:
                         # Ensure the bot is a member of the group/channel
-                        await acc.join_chat(username)
-                except Exception as e:
-                    await client.send_message(message.chat.id, f"Error joining group/channel: {str(e)}", reply_to_message_id=message.id)
-                    return
+                        try:
+                            await acc.join_chat(username)
+                        except Exception as join_error:
+                            await client.send_message(
+                                message.chat.id,
+                                f"Error joining group/channel: {str(join_error)}",
+                                reply_to_message_id=message.id
+                            )
+                            return
 
-                msg = await acc.get_messages(username, msg_id)
-                if msg and not msg.empty:
-                    if msg.text:
-                        # Directly send text messages without trying to download
+                    # Fetch the message
+                    msg = await acc.get_messages(username, msg_id)
+                    if msg and not msg.empty:
+                        if msg.text:
+                            # Directly send text messages without trying to download
+                            await client.send_message(
+                                message.chat.id,
+                                text=msg.text,
+                                entities=msg.entities,
+                                reply_to_message_id=message.id
+                            )
+                        else:
+                            # For media messages, use copy_message
+                            await client.copy_message(
+                                message.chat.id,
+                                msg.chat.id,
+                                msg.id,
+                                reply_to_message_id=message.id
+                            )
+                except UsernameNotOccupied:
+                    await client.send_message(
+                        message.chat.id,
+                        "The username is not occupied by anyone",
+                        reply_to_message_id=message.id
+                    )
+                except Exception as e:
+                    if ERROR_MESSAGE:
                         await client.send_message(
                             message.chat.id,
-                            text=msg.text,
-                            entities=msg.entities,
+                            f"Error accessing message {msg_id}: {str(e)}",
                             reply_to_message_id=message.id
                         )
-                    else:
-                        # For media messages, use copy_message
-                        await client.copy_message(
-                            message.chat.id,
-                            msg.chat.id,
-                            msg.id,
-                            reply_to_message_id=message.id
-                        )
-            except UsernameNotOccupied:
-                await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
             except Exception as e:
                 if ERROR_MESSAGE:
-                    await client.send_message(message.chat.id, f"Error accessing message {msg_id}: {str(e)}", reply_to_message_id=message.id)
+                    await client.send_message(
+                        message.chat.id,
+                        f"Error: {str(e)}",
+                        reply_to_message_id=message.id
+                    )
     except Exception as e:
         if ERROR_MESSAGE:
-            await client.send_message(message.chat.id, f"Error: {str(e)}", reply_to_message_id=message.id)
+            await client.send_message(
+                message.chat.id,
+                f"Error: {str(e)}",
+                reply_to_message_id=message.id
+            )
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     smsg = None  # Initialize smsg to avoid UnboundLocalError
