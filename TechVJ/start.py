@@ -91,48 +91,61 @@ async def process_message(client, acc, message, datas, msg_id):
         else:
             username = datas[3]
             try:
-                # Check if the bot is a member of the public group/channel
+                # Try to get chat info first
                 try:
                     chat = await acc.get_chat(username)
                     if chat.type in ["group", "supergroup", "channel"]:
-                        # Ensure the bot is a member of the group/channel
                         try:
-                            await acc.join_chat(username)
-                        except Exception as join_error:
-                            await client.send_message(
-                                message.chat.id,
-                                f"Error joining group/channel: {str(join_error)}",
-                                reply_to_message_id=message.id
-                            )
-                            return
+                            member = await acc.get_chat_member(chat.id, "me")
+                        except Exception:
+                            try:
+                                await acc.join_chat(username)
+                            except Exception as join_error:
+                                await client.send_message(
+                                    message.chat.id,
+                                    f"Unable to join the chat: {str(join_error)}",
+                                    reply_to_message_id=message.id
+                                )
+                                return
 
                     # Fetch the message
-                    msg = await acc.get_messages(username, msg_id)
-                    if msg and not msg.empty:
-                        if msg.text:
-                            # Directly send text messages without trying to download
-                            await client.send_message(
-                                message.chat.id,
-                                text=msg.text,
-                                entities=msg.entities,
-                                reply_to_message_id=message.id
-                            )
-                        else:
-                            # For media messages, use copy_message
-                            await client.copy_message(
-                                message.chat.id,
-                                msg.chat.id,
-                                msg.id,
-                                reply_to_message_id=message.id
-                            )
-                except UsernameNotOccupied:
+                    try:
+                        msg = await acc.get_messages(chat.id, msg_id)
+                        if msg and not msg.empty:
+                            if msg.text:
+                                await client.send_message(
+                                    message.chat.id,
+                                    text=msg.text,
+                                    entities=msg.entities,
+                                    reply_to_message_id=message.id
+                                )
+                            else:
+                                await client.copy_message(
+                                    message.chat.id,
+                                    msg.chat.id,
+                                    msg.id,
+                                    reply_to_message_id=message.id
+                                )
+                    except Exception as msg_error:
+                        await client.send_message(
+                            message.chat.id,
+                            f"Cannot access message: {str(msg_error)}",
+                            reply_to_message_id=message.id
+                        )
+                except (UsernameNotOccupied, KeyError):
                     await client.send_message(
                         message.chat.id,
-                        "The username is not occupied by anyone",
+                        "This username is not valid or the channel/group doesn't exist.",
                         reply_to_message_id=message.id
                     )
                 except Exception as e:
-                    if ERROR_MESSAGE:
+                    if "CHANNEL_INVALID" in str(e):
+                        await client.send_message(
+                            message.chat.id,
+                            "Unable to access this channel. Please make sure:\n1. The channel exists\n2. You have joined the channel\n3. You have permission to access messages",
+                            reply_to_message_id=message.id
+                        )
+                    elif ERROR_MESSAGE:
                         await client.send_message(
                             message.chat.id,
                             f"Error accessing message {msg_id}: {str(e)}",
