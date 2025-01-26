@@ -111,29 +111,54 @@ async def process_message(client, acc, message, datas, msg_id):
         else:
             username = datas[3]
             try:
+                # First try to get chat info
                 try:
-                    await acc.join_chat(username)
-                except (UserNotParticipant, Exception):
-                    pass
+                    chat = await acc.get_chat(username)
+                except Exception:
+                    try:
+                        await acc.join_chat(username)
+                        await asyncio.sleep(1)
+                        chat = await acc.get_chat(username)
+                    except Exception as e:
+                        raise Exception(f"Failed to access chat: {str(e)}")
 
-                await asyncio.sleep(1)
-                
-                chat = await acc.get_chat(username)
-                msg = await acc.get_messages(chat.id, msg_id)
-                
-                if msg and not msg.empty:
-                    # Direct copy for public groups
+                # Get message
+                try:
+                    msg = await acc.get_messages(chat.id, msg_id)
+                    if not msg or msg.empty:
+                        raise MessageIdInvalid
+                except MessageIdInvalid:
+                    raise Exception(f"Message {msg_id} not found")
+
+                # Try direct copy first
+                try:
                     await client.copy_message(
                         chat_id=message.chat.id,
                         from_chat_id=chat.id,
-                        message_id=msg.id,
+                        message_id=msg_id,
                         reply_to_message_id=message.id
                     )
-                        
+                except Exception:
+                    # If direct copy fails, try downloading and sending
+                    if msg.text:
+                        await client.send_message(
+                            message.chat.id,
+                            text=msg.text,
+                            entities=msg.entities,
+                            reply_to_message_id=message.id
+                        )
+                    else:
+                        file = await acc.download_media(msg)
+                        if file:
+                            caption = msg.caption or None
+                            await send_media(client, acc, msg, message.chat.id, file, caption, message.id)
+                            if os.path.exists(file):
+                                os.remove(file)
+
             except Exception as e:
                 error_text = str(e)
                 if "CHANNEL_INVALID" in error_text:
-                    error_text = "Unable to access this channel/group. Please make sure it's public and accessible."
+                    error_text = "Unable to access this channel/group. Please make sure the bot is a member of the group."
                 elif "MESSAGE_ID_INVALID" in error_text:
                     error_text = f"Message {msg_id} not found."
                 elif "FLOOD_WAIT" in error_text:
@@ -146,7 +171,7 @@ async def process_message(client, acc, message, datas, msg_id):
                         f"Error: {error_text}",
                         reply_to_message_id=message.id
                     )
-                    
+
     except UsernameNotOccupied:
         if ERROR_MESSAGE:
             await client.send_message(
