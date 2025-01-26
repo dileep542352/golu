@@ -3,7 +3,9 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import (
     UsernameNotOccupied,
+    ChannelInvalid,
     FloodWait,
+    MessageIdInvalid,
     UserNotParticipant
 )
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
@@ -94,15 +96,18 @@ async def save(client: Client, message: Message):
             except Exception as e:
                 if ERROR_MESSAGE:
                     await message.reply(f"Error processing message {msg_id}: {str(e)}")
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)  # Reduced sleep time for faster processing
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
 
 async def process_message(client, acc, message, datas, msg_id):
     try:
-        if "https://t.me/c/" in message.text or "https://t.me/b/" in message.text:
-            chat_id_or_username = int("-100" + datas[4]) if "https://t.me/c/" in message.text else datas[4]
-            await handle_private(client, acc, message, chat_id_or_username, msg_id)
+        if "https://t.me/c/" in message.text:
+            chat_id = int("-100" + datas[4])
+            await handle_private(client, acc, message, chat_id, msg_id)
+        elif "https://t.me/b/" in message.text:
+            username = datas[4]
+            await handle_private(client, acc, message, username, msg_id)
         else:
             username = datas[3]
             try:
@@ -117,13 +122,42 @@ async def process_message(client, acc, message, datas, msg_id):
                 msg = await acc.get_messages(chat.id, msg_id)
                 
                 if msg and not msg.empty:
-                    # Directly copy message without showing download/upload messages
-                    await client.copy_message(
-                        chat_id=message.chat.id,
-                        from_chat_id=chat.id,
-                        message_id=msg.id,
-                        reply_to_message_id=message.id
-                    )
+                    chat_id = message.chat.id
+                    
+                    if msg.text:
+                        await client.send_message(
+                            chat_id,
+                            text=msg.text,
+                            entities=msg.entities,
+                            reply_to_message_id=message.id
+                        )
+                        return
+
+                    smsg = await client.send_message(chat_id, '**Downloading...**', reply_to_message_id=message.id)
+                    
+                    try:
+                        file = await acc.download_media(
+                            msg,
+                            progress=progress,
+                            progress_args=[message, "down"]
+                        )
+                        
+                        if file:
+                            await smsg.edit_text("**Uploading...**")
+                            caption = msg.caption or None
+                            await send_media(client, acc, msg, chat_id, file, caption, message.id)
+                            if os.path.exists(file):
+                                os.remove(file)
+                    except Exception:
+                        await client.copy_message(
+                            chat_id=chat_id,
+                            from_chat_id=chat.id,
+                            message_id=msg.id,
+                            reply_to_message_id=message.id
+                        )
+                    finally:
+                        await smsg.delete()
+                        
             except Exception as e:
                 error_text = str(e)
                 if "CHANNEL_INVALID" in error_text:
@@ -158,9 +192,9 @@ async def process_message(client, acc, message, datas, msg_id):
                 reply_to_message_id=message.id
             )
 
-async def handle_private(client: Client, acc, message: Message, chat_id_or_username, msg_id: int):
+async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     try:
-        msg = await acc.get_messages(chat_id_or_username, msg_id)
+        msg = await acc.get_messages(chat_id, msg_id)
         if not msg or msg.empty:
             return
 
@@ -194,12 +228,20 @@ async def handle_private(client: Client, acc, message: Message, chat_id_or_usern
                 if os.path.exists(file):
                     os.remove(file)
         except Exception:
-            await client.copy_message(
-                chat_id=chat,
-                from_chat_id=msg.chat.id,
-                message_id=msg.id,
-                reply_to_message_id=message.id
-            )
+            try:
+                await client.copy_message(
+                    chat_id=chat,
+                    from_chat_id=msg.chat.id,
+                    message_id=msg.id,
+                    reply_to_message_id=message.id
+                )
+            except Exception as e:
+                if ERROR_MESSAGE:
+                    await client.send_message(
+                        chat,
+                        f"Error: {str(e)}",
+                        reply_to_message_id=message.id
+                    )
         finally:
             await smsg.delete()
 
