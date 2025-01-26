@@ -4,12 +4,9 @@ from pyrogram import Client, filters
 from pyrogram.errors import (
     UsernameNotOccupied,
     ChannelInvalid,
-    ChannelPrivate,
-    MessageNotFound,
-    ChatAdminRequired,
-    ChatWriteForbidden,
-    UserNotParticipant,
-    FloodWait
+    FloodWait,
+    MessageIdInvalid,
+    UserNotParticipant
 )
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, ERROR_MESSAGE
@@ -99,111 +96,99 @@ async def save(client: Client, message: Message):
             except Exception as e:
                 if ERROR_MESSAGE:
                     await message.reply(f"Error processing message {msg_id}: {str(e)}")
-            await asyncio.sleep(2)  # Delay between messages
+            await asyncio.sleep(2)
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
 
 async def process_message(client, acc, message, datas, msg_id):
     try:
         if "https://t.me/c/" in message.text:
-            # Private channel/group
             chat_id = int("-100" + datas[4])
             await handle_private(client, acc, message, chat_id, msg_id)
         elif "https://t.me/b/" in message.text:
-            # Public discussion group
             username = datas[4]
             await handle_private(client, acc, message, username, msg_id)
         else:
-            # Public channel/group
             username = datas[3]
             try:
-                # Try to join the chat first
                 try:
                     await acc.join_chat(username)
-                except Exception:
-                    pass  # Ignore if already joined
+                except (UserNotParticipant, Exception):
+                    pass
 
-                await asyncio.sleep(1)  # Small delay after joining
+                await asyncio.sleep(1)
                 
-                # Get the chat information first
                 chat = await acc.get_chat(username)
+                msg = await acc.get_messages(chat.id, msg_id)
                 
-                try:
-                    msg = await acc.get_messages(chat.id, msg_id)
-                    if msg and not msg.empty:
-                        chat_id = message.chat.id
-                        
-                        if msg.text:
-                            await client.send_message(
-                                chat_id,
-                                text=msg.text,
-                                entities=msg.entities,
-                                reply_to_message_id=message.id
-                            )
-                            return
-
-                        msg_type = get_message_type(msg)
-                        if not msg_type:
-                            return
-
-                        smsg = await client.send_message(chat_id, '**Downloading...**', reply_to_message_id=message.id)
-                        
-                        try:
-                            file = await acc.download_media(
-                                msg,
-                                progress=progress,
-                                progress_args=[message, "down"]
-                            )
-                            
-                            if file:
-                                await smsg.edit_text("**Uploading...**")
-                                caption = msg.caption or None
-                                await send_media(client, acc, msg, chat_id, file, caption, message.id)
-                                if os.path.exists(file):
-                                    os.remove(file)
-                        except Exception:
-                            # If download fails, try to forward directly
-                            await client.copy_message(
-                                chat_id=chat_id,
-                                from_chat_id=chat.id,
-                                message_id=msg.id,
-                                reply_to_message_id=message.id
-                            )
-                        finally:
-                            await smsg.delete()
-                            
-                except Exception as e:
-                    if ERROR_MESSAGE:
-                        error_msg = str(e)
-                        if "CHANNEL_INVALID" in error_msg:
-                            error_msg = "Unable to access this message. Please make sure the group is public and accessible."
-                        elif "MESSAGE_NOT_FOUND" in error_msg:
-                            error_msg = f"Message {msg_id} not found in the group."
+                if msg and not msg.empty:
+                    chat_id = message.chat.id
+                    
+                    if msg.text:
                         await client.send_message(
-                            message.chat.id,
-                            f"Error: {error_msg}",
+                            chat_id,
+                            text=msg.text,
+                            entities=msg.entities,
                             reply_to_message_id=message.id
                         )
+                        return
+
+                    smsg = await client.send_message(chat_id, '**Downloading...**', reply_to_message_id=message.id)
+                    
+                    try:
+                        file = await acc.download_media(
+                            msg,
+                            progress=progress,
+                            progress_args=[message, "down"]
+                        )
+                        
+                        if file:
+                            await smsg.edit_text("**Uploading...**")
+                            caption = msg.caption or None
+                            await send_media(client, acc, msg, chat_id, file, caption, message.id)
+                            if os.path.exists(file):
+                                os.remove(file)
+                    except Exception:
+                        await client.copy_message(
+                            chat_id=chat_id,
+                            from_chat_id=chat.id,
+                            message_id=msg.id,
+                            reply_to_message_id=message.id
+                        )
+                    finally:
+                        await smsg.delete()
                         
             except Exception as e:
+                error_text = str(e)
+                if "CHANNEL_INVALID" in error_text:
+                    error_text = "Unable to access this channel/group. Please make sure it's public and accessible."
+                elif "MESSAGE_ID_INVALID" in error_text:
+                    error_text = f"Message {msg_id} not found."
+                elif "FLOOD_WAIT" in error_text:
+                    wait_time = int(''.join(filter(str.isdigit, error_text)))
+                    error_text = f"Please wait {wait_time} seconds before trying again."
+                
                 if ERROR_MESSAGE:
                     await client.send_message(
                         message.chat.id,
-                        f"Error accessing group: {str(e)}",
+                        f"Error: {error_text}",
                         reply_to_message_id=message.id
                     )
                     
     except UsernameNotOccupied:
-        await client.send_message(
-            message.chat.id,
-            "This username is not occupied by any group or channel.",
-            reply_to_message_id=message.id
-        )
+        if ERROR_MESSAGE:
+            await client.send_message(
+                message.chat.id,
+                "This username is not occupied by any channel or group.",
+                reply_to_message_id=message.id
+            )
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(
                 message.chat.id,
-                f"Error: {str(e)}",
+                f"An error occurred: {str(e)}",
                 reply_to_message_id=message.id
             )
 
@@ -243,13 +228,20 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
                 if os.path.exists(file):
                     os.remove(file)
         except Exception:
-            # If download fails, try to forward directly
-            await client.copy_message(
-                chat_id=chat,
-                from_chat_id=msg.chat.id,
-                message_id=msg.id,
-                reply_to_message_id=message.id
-            )
+            try:
+                await client.copy_message(
+                    chat_id=chat,
+                    from_chat_id=msg.chat.id,
+                    message_id=msg.id,
+                    reply_to_message_id=message.id
+                )
+            except Exception as e:
+                if ERROR_MESSAGE:
+                    await client.send_message(
+                        chat,
+                        f"Error: {str(e)}",
+                        reply_to_message_id=message.id
+                    )
         finally:
             await smsg.delete()
 
