@@ -97,58 +97,69 @@ async def process_message(client, acc, message, datas, msg_id):
             username = datas[4]
             await handle_private(client, acc, message, username, msg_id)
         else:
-            username = datas[3]
-            msg = await acc.get_messages(username, msg_id)
-            if msg and not msg.empty:
-                if msg.text:
+            try:
+                username = datas[3]
+                # First try to get message as bot
+                try:
+                    msg = await client.get_messages(username, msg_id)
+                except:
+                    # If failed, try with user account
+                    msg = await acc.get_messages(username, msg_id)
+                
+                if msg:
+                    if msg.text:
+                        await client.send_message(
+                            message.chat.id,
+                            text=msg.text,
+                            entities=msg.entities,
+                            reply_to_message_id=message.id
+                        )
+                    else:
+                        await msg.copy(
+                            message.chat.id,
+                            reply_to_message_id=message.id
+                        )
+                else:
                     await client.send_message(
                         message.chat.id,
-                        text=msg.text,
-                        entities=msg.entities,
+                        "The message is not available.",
                         reply_to_message_id=message.id
                     )
-                else:
-                    await client.copy_message(
-                        message.chat.id,
-                        msg.chat.id,
-                        msg.id,
-                        reply_to_message_id=message.id
-                    )
-            else:
+            except Exception as e:
                 await client.send_message(
                     message.chat.id,
-                    "The message is not available.",
+                    f"Error accessing the channel/group. Please make sure the bot has access.",
                     reply_to_message_id=message.id
                 )
-    except UsernameNotOccupied:
-        await client.send_message(
-            message.chat.id,
-            "The username is not occupied by anyone",
-            reply_to_message_id=message.id
-        )
     except Exception as e:
         if ERROR_MESSAGE:
             await client.send_message(
                 message.chat.id,
-                f"Error: {e}",
+                f"Error: {str(e)}",
                 reply_to_message_id=message.id
             )
 
 async def handle_private(client: Client, acc, message: Message, chat_id, msg_id: int):
     try:
-        msg = await acc.get_messages(chat_id, msg_id)
-        if msg is None or msg.empty:
+        try:
+            msg = await acc.get_messages(chat_id, msg_id)
+        except:
+            # If failed with user account, try with bot
+            msg = await client.get_messages(chat_id, msg_id)
+            
+        if not msg:
             await client.send_message(
                 message.chat.id,
-                "The message does not exist or is empty.",
+                "Unable to access this message.",
                 reply_to_message_id=message.id
             )
             return
 
-        # Handle text messages directly
+        chat = message.chat.id
+
         if msg.text:
             await client.send_message(
-                message.chat.id,
+                chat,
                 text=msg.text,
                 entities=msg.entities,
                 reply_to_message_id=message.id
@@ -158,34 +169,55 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
         msg_type = get_message_type(msg)
         if not msg_type:
             await client.send_message(
-                message.chat.id,
+                chat,
                 "Unsupported message type.",
                 reply_to_message_id=message.id
             )
             return
 
-        chat = message.chat.id
-        smsg = await client.send_message(chat, '**Downloading**', reply_to_message_id=message.id)
-        asyncio.create_task(update_status(client, f'{message.id}downstatus.txt', smsg, chat, "Downloaded"))
+        smsg = await client.send_message(chat, '**Downloading...**', reply_to_message_id=message.id)
+        
+        try:
+            status_file = f'{message.id}downstatus.txt'
+            asyncio.create_task(update_status(client, status_file, smsg, chat, "Downloaded"))
+            
+            file = await acc.download_media(
+                msg,
+                progress=progress,
+                progress_args=[message, "down"]
+            )
+            
+            if os.path.exists(status_file):
+                os.remove(status_file)
 
-        file = await acc.download_media(msg, progress=progress, progress_args=[message, "down"])
-        os.remove(f'{message.id}downstatus.txt')
+            if not file:
+                await smsg.edit("Download failed!")
+                return
 
-        asyncio.create_task(update_status(client, f'{message.id}upstatus.txt', smsg, chat, "Uploaded"))
-        caption = msg.caption or None
+            up_status_file = f'{message.id}upstatus.txt'
+            asyncio.create_task(update_status(client, up_status_file, smsg, chat, "Uploaded"))
+            
+            caption = msg.caption or None
+            await send_media(client, acc, msg, chat, file, caption, message.id)
 
-        await send_media(client, acc, msg, chat, file, caption, message.id)
+            if os.path.exists(up_status_file):
+                os.remove(up_status_file)
+            
+            if os.path.exists(file):
+                os.remove(file)
 
-        if os.path.exists(f'{message.id}upstatus.txt'):
-            os.remove(f'{message.id}upstatus.txt')
-            os.remove(file)
-        await client.delete_messages(chat, [smsg.id])
+        except Exception as e:
+            await smsg.edit(f"Error: {str(e)}")
+            return
+        finally:
+            await smsg.delete()
 
     except Exception as e:
-        if ERROR_MESSAGE:
-            await client.send_message(chat, f"Error: {e}", reply_to_message_id=message.id)
-        if 'smsg' in locals():
-            await smsg.delete()
+        await client.send_message(
+            message.chat.id,
+            f"Error: {str(e)}",
+            reply_to_message_id=message.id
+        )
 
 async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
