@@ -1,11 +1,16 @@
 import os
 import asyncio
+import logging
 from pyrogram import Client, filters
 from pyrogram.errors import UsernameNotOccupied
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, ERROR_MESSAGE
 from database.db import db
 from TechVJ.strings import HELP_TXT
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class BatchStatus:
     IS_BATCH = {}
@@ -19,7 +24,8 @@ async def update_status(client, statusfile, message, chat, prefix):
         try:
             await client.edit_message_text(chat, message.id, f"**{prefix}:** **{progress}**")
             await asyncio.sleep(10)
-        except:
+        except Exception as e:
+            logger.error(f"Error updating status: {e}")
             await asyncio.sleep(5)
 
 def progress(current, total, message, type):
@@ -61,14 +67,17 @@ async def save(client: Client, message: Message):
     if BatchStatus.IS_BATCH.get(message.from_user.id) == False:
         return await message.reply_text("**One task is already in progress. Use /cancel to stop it.**")
 
-    datas = message.text.split("/")
+    cleaned_text = message.text.replace(" ", "")
+    datas = cleaned_text.split("/")
+    
     try:
         msg_range = datas[-1].replace("?single", "")
         if "-" in msg_range:
             from_id, to_id = map(int, msg_range.split("-"))
         else:
             from_id = to_id = int(msg_range)
-    except:
+    except Exception as e:
+        logger.error(f"Invalid message link format: {e}")
         return await message.reply_text("**Invalid message link format.**")
 
     BatchStatus.IS_BATCH[message.from_user.id] = False
@@ -85,25 +94,25 @@ async def save(client: Client, message: Message):
                 break
 
             await process_message(client, acc, message, datas, msg_id)
+            await asyncio.sleep(1)  # Add a delay to avoid rate limiting
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
 
 async def process_message(client, acc, message, datas, msg_id):
     try:
-        if "https://t.me/c/" in message.text:
+        if "https://t.me/c/" in message.text.replace(" ", ""):
             chat_id = int("-100" + datas[4])
             await handle_private(client, acc, message, chat_id, msg_id)
-        elif "https://t.me/b/" in message.text:
+        elif "https://t.me/b/" in message.text.replace(" ", ""):
             username = datas[4]
             await handle_private(client, acc, message, username, msg_id)
         else:
             try:
                 username = datas[3]
-                # First try to get message as bot
                 try:
                     msg = await client.get_messages(username, msg_id)
-                except:
-                    # If failed, try with user account
+                except Exception as e:
+                    logger.error(f"Error getting message {msg_id} from {username}: {e}")
                     msg = await acc.get_messages(username, msg_id)
                 
                 if msg:
@@ -120,18 +129,17 @@ async def process_message(client, acc, message, datas, msg_id):
                             reply_to_message_id=message.id
                         )
                 else:
-                    await client.send_message(
-                        message.chat.id,
-                        "The message is not available.",
-                        reply_to_message_id=message.id
-                    )
+                    logger.warning(f"Message {msg_id} not found in {username}")
+                    return
             except Exception as e:
+                logger.error(f"Error accessing the channel/group {username}: {e}")
                 await client.send_message(
                     message.chat.id,
                     f"Error accessing the channel/group. Please make sure the bot has access.",
                     reply_to_message_id=message.id
                 )
     except Exception as e:
+        logger.error(f"Error processing message {msg_id}: {e}")
         if ERROR_MESSAGE:
             await client.send_message(
                 message.chat.id,
@@ -143,16 +151,12 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
     try:
         try:
             msg = await acc.get_messages(chat_id, msg_id)
-        except:
-            # If failed with user account, try with bot
+        except Exception as e:
+            logger.error(f"Error getting message {msg_id} from {chat_id}: {e}")
             msg = await client.get_messages(chat_id, msg_id)
             
         if not msg:
-            await client.send_message(
-                message.chat.id,
-                "Unable to access this message.",
-                reply_to_message_id=message.id
-            )
+            logger.warning(f"Message {msg_id} not found in {chat_id}")
             return
 
         chat = message.chat.id
@@ -168,11 +172,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
 
         msg_type = get_message_type(msg)
         if not msg_type:
-            await client.send_message(
-                chat,
-                "Unsupported message type.",
-                reply_to_message_id=message.id
-            )
+            logger.warning(f"Unsupported message type for message {msg_id} in {chat_id}")
             return
 
         smsg = await client.send_message(chat, '**Downloading...**', reply_to_message_id=message.id)
@@ -197,7 +197,27 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             up_status_file = f'{message.id}upstatus.txt'
             asyncio.create_task(update_status(client, up_status_file, smsg, chat, "Uploaded"))
             
-            caption = msg.caption or None
+            if msg_type in ["Document", "Video"]:
+                # Extract video number from message link
+                video_number = "237"  # Default value
+                if "https://t.me/c/" in message.text:
+                    video_number = message.text.split("/")[-1].split("?")[0]
+                
+                # Create custom caption
+                custom_caption = f"""
+——— ✦ {video_number} ✦ ———
+🎞️ Title: {msg.caption or "Video Title"}
+├── Extension: {os.path.basename(file)}
+├── Resolution: {msg.video.resolution if msg.video else "720p"}
+
+📚 Course: {msg.caption or "Course Name"}
+
+🌟 Extracted By: sonu❤️
+"""
+                caption = custom_caption
+            else:
+                caption = msg.caption or None
+
             await send_media(client, acc, msg, chat, file, caption, message.id)
 
             if os.path.exists(up_status_file):
@@ -207,12 +227,14 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
                 os.remove(file)
 
         except Exception as e:
+            logger.error(f"Error handling message {msg_id}: {e}")
             await smsg.edit(f"Error: {str(e)}")
             return
         finally:
             await smsg.delete()
 
     except Exception as e:
+        logger.error(f"Error in handle_private for message {msg_id}: {e}")
         await client.send_message(
             message.chat.id,
             f"Error: {str(e)}",
@@ -225,10 +247,24 @@ async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id)
 
     try:
         if msg_type == "Document":
-            await client.send_document(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+            await client.send_document(
+                chat,
+                file,
+                thumb=thumb,
+                caption=caption,
+                reply_to_message_id=reply_to_message_id
+            )
         elif msg_type == "Video":
-            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
-                                    thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+            await client.send_video(
+                chat,
+                file,
+                duration=msg.video.duration,
+                width=msg.video.width,
+                height=msg.video.height,
+                thumb=thumb,
+                caption=caption,
+                reply_to_message_id=reply_to_message_id
+            )
         elif msg_type == "Animation":
             await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Sticker":
@@ -254,7 +290,8 @@ async def download_thumb(acc, msg):
             return await acc.download_media(msg.document.thumbs[0].file_id)
         elif msg.video and msg.video.thumbs:
             return await acc.download_media(msg.video.thumbs[0].file_id)
-    except:
+    except Exception as e:
+        logger.error(f"Error downloading thumbnail: {e}")
         return None
 
 def get_message_type(msg: Message):
