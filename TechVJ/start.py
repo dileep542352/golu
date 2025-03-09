@@ -94,7 +94,7 @@ async def save(client: Client, message: Message):
                 break
 
             await process_message(client, acc, message, datas, msg_id)
-            await asyncio.sleep(1)
+            await asyncio.sleep(1)  # Add a delay to avoid rate limiting
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
 
@@ -197,7 +197,8 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             up_status_file = f'{message.id}upstatus.txt'
             asyncio.create_task(update_status(client, up_status_file, smsg, chat, "Uploaded"))
             
-            await send_media(client, acc, msg, chat, file, message.id)
+            caption = msg.caption or None
+            await send_media(client, acc, msg, chat, file, caption, message.id)
 
             if os.path.exists(up_status_file):
                 os.remove(up_status_file)
@@ -220,36 +221,26 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             reply_to_message_id=message.id
         )
 
-async def send_media(client, acc, msg, chat, file, reply_to_message_id):
+async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
     thumb = await download_thumb(acc, msg)
-    
-    custom_caption = f"""——— ✦ {reply_to_message_id} ✦ ———
-
-🎞️ Title: {msg.caption or "Untitled"}
-├── Extention: sonu{".mkv" if msg.video else ".pdf" if msg.document else ""}
-├── Resolution: {f"{msg.video.width}x{msg.video.height}" if msg.video else "N/A"}
-
-📚 Course: {msg.caption or "Untitled"}
-
-🌟 Extracted By: sonu❤️"""
 
     try:
         if msg_type == "Document":
-            await client.send_document(chat, file, thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
+            await client.send_document(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Video":
             await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
-                                    thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
+                                    thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Animation":
             await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Sticker":
             await client.send_sticker(chat, file, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Voice":
-            await client.send_voice(chat, file, caption=custom_caption, reply_to_message_id=reply_to_message_id)
+            await client.send_voice(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Audio":
-            await client.send_audio(chat, file, thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
+            await client.send_audio(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Photo":
-            await client.send_photo(chat, file, caption=custom_caption, reply_to_message_id=reply_to_message_id)
+            await client.send_photo(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Text":
             await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=reply_to_message_id)
     finally:
