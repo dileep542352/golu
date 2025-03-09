@@ -94,9 +94,34 @@ async def save(client: Client, message: Message):
                 break
 
             await process_message(client, acc, message, datas, msg_id)
-            await asyncio.sleep(1)  # Add a delay to avoid rate limiting
+            await asyncio.sleep(1)
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
+
+def generate_custom_caption(msg, msg_id):
+    original_title = msg.caption or "Untitled"
+    
+    extension = ""
+    if msg.document:
+        extension = os.path.splitext(msg.document.file_name)[1] if msg.document.file_name else ".mkv"
+    elif msg.video:
+        extension = ".mkv"
+    
+    resolution = ""
+    if msg.video:
+        resolution = f"{msg.video.width}x{msg.video.height}"
+    
+    caption = f"""——— ✦ {msg_id} ✦ ———
+
+🎞️ Title: {original_title}
+├── Extention: sonu{extension}
+├── Resolution: {resolution if resolution else "N/A"}
+
+📚 Course: {original_title}
+
+🌟 Extracted By: sonu❤️"""
+    
+    return caption
 
 async def process_message(client, acc, message, datas, msg_id):
     try:
@@ -197,27 +222,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             up_status_file = f'{message.id}upstatus.txt'
             asyncio.create_task(update_status(client, up_status_file, smsg, chat, "Uploaded"))
             
-            if msg_type in ["Document", "Video"]:
-                # Extract video number from message link
-                video_number = "237"  # Default value
-                if "https://t.me/c/" in message.text:
-                    video_number = message.text.split("/")[-1].split("?")[0]
-                
-                # Create custom caption
-                custom_caption = f"""
-——— ✦ {video_number} ✦ ———
-🎞️ Title: {msg.caption or "Video Title"}
-├── Extension: {os.path.basename(file)}
-├── Resolution: {msg.video.resolution if msg.video else "720p"}
-
-📚 Course: {msg.caption or "Course Name"}
-
-🌟 Extracted By: sonu❤️
-"""
-                caption = custom_caption
-            else:
-                caption = msg.caption or None
-
+            caption = msg.caption or None
             await send_media(client, acc, msg, chat, file, caption, message.id)
 
             if os.path.exists(up_status_file):
@@ -244,37 +249,25 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
 async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
     msg_type = get_message_type(msg)
     thumb = await download_thumb(acc, msg)
+    
+    custom_caption = generate_custom_caption(msg, reply_to_message_id)
 
     try:
         if msg_type == "Document":
-            await client.send_document(
-                chat,
-                file,
-                thumb=thumb,
-                caption=caption,
-                reply_to_message_id=reply_to_message_id
-            )
+            await client.send_document(chat, file, thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Video":
-            await client.send_video(
-                chat,
-                file,
-                duration=msg.video.duration,
-                width=msg.video.width,
-                height=msg.video.height,
-                thumb=thumb,
-                caption=caption,
-                reply_to_message_id=reply_to_message_id
-            )
+            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
+                                    thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Animation":
             await client.send_animation(chat, file, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Sticker":
             await client.send_sticker(chat, file, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Voice":
-            await client.send_voice(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
+            await client.send_voice(chat, file, caption=custom_caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Audio":
-            await client.send_audio(chat, file, thumb=thumb, caption=caption, reply_to_message_id=reply_to_message_id)
+            await client.send_audio(chat, file, thumb=thumb, caption=custom_caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Photo":
-            await client.send_photo(chat, file, caption=caption, reply_to_message_id=reply_to_message_id)
+            await client.send_photo(chat, file, caption=custom_caption, reply_to_message_id=reply_to_message_id)
         elif msg_type == "Text":
             await client.send_message(chat, msg.text, entities=msg.entities, reply_to_message_id=reply_to_message_id)
     finally:
