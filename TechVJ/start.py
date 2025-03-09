@@ -98,31 +98,6 @@ async def save(client: Client, message: Message):
 
     BatchStatus.IS_BATCH[message.from_user.id] = True
 
-def generate_custom_caption(msg, msg_id):
-    original_title = msg.caption or "Untitled"
-    
-    extension = ""
-    if msg.document:
-        extension = os.path.splitext(msg.document.file_name)[1] if msg.document.file_name else ".mkv"
-    elif msg.video:
-        extension = ".mkv"
-    
-    resolution = ""
-    if msg.video:
-        resolution = f"{msg.video.width}x{msg.video.height}"
-    
-    caption = f"""——— ✦ {msg_id} ✦ ———
-
-🎞️ Title: {original_title}
-├── Extention: sonu{extension}
-├── Resolution: {resolution if resolution else "N/A"}
-
-📚 Course: {original_title}
-
-🌟 Extracted By: sonu❤️"""
-    
-    return caption
-
 async def process_message(client, acc, message, datas, msg_id):
     try:
         if "https://t.me/c/" in message.text.replace(" ", ""):
@@ -222,8 +197,7 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             up_status_file = f'{message.id}upstatus.txt'
             asyncio.create_task(update_status(client, up_status_file, smsg, chat, "Uploaded"))
             
-            caption = msg.caption or None
-            await send_media(client, acc, msg, chat, file, caption, message.id)
+            await send_media(client, acc, msg, chat, file, message.id)
 
             if os.path.exists(up_status_file):
                 os.remove(up_status_file)
@@ -246,11 +220,19 @@ async def handle_private(client: Client, acc, message: Message, chat_id, msg_id:
             reply_to_message_id=message.id
         )
 
-async def send_media(client, acc, msg, chat, file, caption, reply_to_message_id):
+async def send_media(client, acc, msg, chat, file, reply_to_message_id):
     msg_type = get_message_type(msg)
     thumb = await download_thumb(acc, msg)
     
-    custom_caption = generate_custom_caption(msg, reply_to_message_id)
+    custom_caption = f"""——— ✦ {reply_to_message_id} ✦ ———
+
+🎞️ Title: {msg.caption or "Untitled"}
+├── Extention: sonu{".mkv" if msg.video else ".pdf" if msg.document else ""}
+├── Resolution: {f"{msg.video.width}x{msg.video.height}" if msg.video else "N/A"}
+
+📚 Course: {msg.caption or "Untitled"}
+
+🌟 Extracted By: sonu❤️"""
 
     try:
         if msg_type == "Document":
